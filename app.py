@@ -269,32 +269,22 @@ def calculate_distance(
 # OPENSTREETMAP EMERGENCY FACILITIES
 # =========================================================
 
-def find_emergency_facilities(
-    latitude,
-    longitude
-):
+# =========================================================
+# OPENSTREETMAP EMERGENCY FACILITIES
+# =========================================================
+
+def find_emergency_facilities(latitude, longitude):
 
     query = f"""
-    [out:json][timeout:20];
+    [out:json][timeout:30];
 
     (
-        nwr["amenity"="hospital"]
-            (around:10000,{latitude},{longitude});
-
-        nwr["amenity"="fire_station"]
-            (around:10000,{latitude},{longitude});
-
-        nwr["amenity"="police"]
-            (around:10000,{latitude},{longitude});
-
-        nwr["amenity"="shelter"]
-            (around:10000,{latitude},{longitude});
-
-        nwr["amenity"="community_centre"]
-            (around:10000,{latitude},{longitude});
-
-        nwr["amenity"="school"]
-            (around:10000,{latitude},{longitude});
+        nwr["amenity"="hospital"](around:10000,{latitude},{longitude});
+        nwr["amenity"="fire_station"](around:10000,{latitude},{longitude});
+        nwr["amenity"="police"](around:10000,{latitude},{longitude});
+        nwr["amenity"="shelter"](around:10000,{latitude},{longitude});
+        nwr["amenity"="community_centre"](around:10000,{latitude},{longitude});
+        nwr["amenity"="school"](around:10000,{latitude},{longitude});
     );
 
     out center tags;
@@ -302,24 +292,61 @@ def find_emergency_facilities(
 
     encoded_query = urllib.parse.quote(query)
 
-    url = (
-        "https://overpass-api.de/api/interpreter"
-        f"?data={encoded_query}"
-    )
+    # Try multiple Overpass servers.
+    # If one server is busy/unavailable, another can respond.
+    overpass_servers = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass.private.coffee/api/interpreter"
+    ]
 
-    try:
+    data = None
 
-        data = get_json(
-            url,
-            headers={
-                "User-Agent": APP_USER_AGENT
-            },
-            timeout=30
+    for server in overpass_servers:
+
+        url = (
+            server
+            + "?data="
+            + encoded_query
         )
 
-    except Exception as error:
+        try:
 
-        print("Overpass error:", error)
+            print(
+                "Trying Overpass server:",
+                server
+            )
+
+            data = get_json(
+                url,
+                headers={
+                    "User-Agent":
+                    APP_USER_AGENT
+                },
+                timeout=40
+            )
+
+            print(
+                "Overpass request successful:",
+                server
+            )
+
+            break
+
+        except Exception as error:
+
+            print(
+                "Overpass server failed:",
+                server,
+                error
+            )
+
+    # If all servers failed
+    if data is None:
+
+        print(
+            "All Overpass servers failed."
+        )
 
         return []
 
@@ -327,101 +354,181 @@ def find_emergency_facilities(
     facilities = []
 
     type_names = {
-        "hospital": "Hospital",
-        "fire_station": "Fire Station",
-        "police": "Police Station",
-        "shelter": "Shelter",
-        "community_centre": "Community Centre",
-        "school": "School"
+
+        "hospital":
+            "Hospital",
+
+        "fire_station":
+            "Fire Station",
+
+        "police":
+            "Police Station",
+
+        "shelter":
+            "Shelter",
+
+        "community_centre":
+            "Community Centre",
+
+        "school":
+            "School"
     }
 
 
-    for element in data.get("elements", []):
+    for element in data.get(
+        "elements",
+        []
+    ):
 
-        tags = element.get("tags", {})
+        tags = element.get(
+            "tags",
+            {}
+        )
 
-        amenity = tags.get("amenity")
+        amenity = tags.get(
+            "amenity"
+        )
 
         if amenity not in type_names:
             continue
 
 
-        # Nodes
-        if "lat" in element and "lon" in element:
+        # -----------------------------
+        # GET FACILITY COORDINATES
+        # -----------------------------
+
+        if (
+            "lat" in element
+            and
+            "lon" in element
+        ):
 
             facility_lat = element["lat"]
             facility_lon = element["lon"]
 
-
-        # Ways/relations
         elif "center" in element:
 
-            facility_lat = element["center"]["lat"]
-            facility_lon = element["center"]["lon"]
+            facility_lat = (
+                element["center"]["lat"]
+            )
+
+            facility_lon = (
+                element["center"]["lon"]
+            )
 
         else:
 
             continue
 
 
+        # -----------------------------
+        # CALCULATE DISTANCE
+        # -----------------------------
+
         distance = calculate_distance(
+
             latitude,
             longitude,
+
             facility_lat,
             facility_lon
+
         )
 
 
-        name = tags.get("name")
+        # -----------------------------
+        # FACILITY NAME
+        # -----------------------------
+
+        name = tags.get(
+            "name"
+        )
 
         if not name:
-            name = type_names[amenity]
 
+            name = type_names[
+                amenity
+            ]
+
+
+        # -----------------------------
+        # OPENING HOURS
+        # -----------------------------
 
         opening_hours = tags.get(
+
             "opening_hours",
+
             "Not available in map data"
+
         )
 
 
+        # -----------------------------
+        # PHONE
+        # -----------------------------
+
         phone = (
+
             tags.get("phone")
-            or tags.get("contact:phone")
-            or "Not available"
+
+            or
+
+            tags.get("contact:phone")
+
+            or
+
+            "Not available"
+
         )
 
 
         facilities.append({
 
-            "name": name,
+            "name":
+                name,
 
-            "type": type_names[amenity],
+            "type":
+                type_names[amenity],
 
-            "latitude": facility_lat,
+            "latitude":
+                facility_lat,
 
-            "longitude": facility_lon,
+            "longitude":
+                facility_lon,
 
-            "distance": round(
-                distance,
-                2
-            ),
+            "distance":
+                round(
+                    distance,
+                    2
+                ),
 
-            "opening_hours": opening_hours,
+            "opening_hours":
+                opening_hours,
 
-            "phone": phone,
+            "phone":
+                phone,
 
-            "source": "OpenStreetMap"
+            "source":
+                "OpenStreetMap"
+
         })
 
 
-    # Remove duplicate names/types
+    # -----------------------------
+    # REMOVE DUPLICATES
+    # -----------------------------
+
     unique = {}
 
     for facility in facilities:
 
         key = (
+
             facility["name"],
+
             facility["type"]
+
         )
 
         if key not in unique:
@@ -429,24 +536,42 @@ def find_emergency_facilities(
             unique[key] = facility
 
         elif (
+
             facility["distance"]
-            < unique[key]["distance"]
+
+            <
+
+            unique[key]["distance"]
+
         ):
 
             unique[key] = facility
 
 
-    facilities = list(unique.values())
+    facilities = list(
+        unique.values()
+    )
 
 
-    # Closest first
+    # -----------------------------
+    # CLOSEST FIRST
+    # -----------------------------
+
     facilities.sort(
-        key=lambda x: x["distance"]
+
+        key=lambda x:
+        x["distance"]
+
+    )
+
+
+    print(
+        "Total mapped emergency facilities:",
+        len(facilities)
     )
 
 
     return facilities
-
 
 # =========================================================
 # SAFE-ZONE RECOMMENDATION
