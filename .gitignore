@@ -1,0 +1,9 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.bak*
+*.tmp
+*.db
+patch_*.py
+test_*.py
